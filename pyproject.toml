@@ -1,0 +1,57 @@
+[project]
+name = "opspilot"
+version = "0.1.0"
+description = "OpsPilot — copiloto de plantão de produção com estratégias de raciocínio (ReAct, plan-and-execute, reflect) e modo equipe (multi-agent) sobre LangGraph. Convertido do exercício original em TypeScript (09-multi-agent-systems)."
+authors = [
+    { name = "Nonato Sales", email = "nrdesales@gmail.com" }
+]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "fastapi (>=0.115.0,<1.0.0)",
+    "uvicorn[standard] (>=0.34.0,<1.0.0)",
+    "langchain (>=1.3.12,<2.0.0)",
+    "langchain-openai (>=1.3.4,<2.0.0)",
+    "langgraph (>=1.2.8,<2.0.0)",
+    "mcp (>=1.24.0,<2.0.0)",
+    "pydantic (>=2.13.4,<3.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "sentence-transformers (>=3.3.0,<4.0.0)",
+    "httpx (>=0.28.0,<1.0.0)",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-asyncio (>=1.0.0,<2.0.0)",
+    "ruff (>=0.15.10,<1.0.0)",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+# 100 (não 88) porque boa parte dos prompts/mensagens do OpsPilot são prosa em
+# português (acentuação, frases longas) — 88 quebrava excessivamente essas strings.
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP047: mantém TypeVar clássico (em vez da sintaxe de generics do PEP 695) para
+# compatibilidade ampla de tooling.
+ignore = ["UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tabelas markdown embutidas nos prompts do roteador/supervisor — linhas longas
+# de propósito, não quebráveis sem distorcer a tabela.
+"app/graph/router_prompt.py" = ["E501"]
+"app/team/supervisor_prompt.py" = ["E501"]
