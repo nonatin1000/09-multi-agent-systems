@@ -6,7 +6,6 @@ import os
 from typing import Literal
 
 from starlette.requests import Request
-from starlette.responses import Response
 from starlette.types import ASGIApp
 
 #: Sentinela: reflete qualquer Origin do browser (default dev/demo).
@@ -27,19 +26,29 @@ def resolve_cors_origins(env_value: str | None = None) -> list[str] | Literal["*
     return _parse_origins(value)
 
 
-def _apply_cors_headers(response: Response, origin: str | None, allow_all: bool) -> None:
+def _cors_header_pairs(origin: str | None, allow_all: bool) -> list[tuple[bytes, bytes]]:
+    """Cabeçalhos CORS como pares brutos ASGI — nunca via ``Response()``, cujo
+    ``content-length``/``content-type`` default colidiria com os da resposta
+    real (erro ``conflicting Content-Length headers`` no cliente)."""
     if allow_all:
-        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        origin_value = origin or "*"
     elif origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
+        origin_value = origin
     else:
-        return
+        return []
+
+    pairs = [("Access-Control-Allow-Origin", origin_value)]
     if origin:
-        response.headers["Vary"] = "Origin"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Request-Id"
-    response.headers["Access-Control-Expose-Headers"] = "X-Request-Id"
-    response.headers["Access-Control-Max-Age"] = "86400"
+        pairs.append(("Vary", "Origin"))
+    pairs.extend(
+        [
+            ("Access-Control-Allow-Methods", "GET,POST,OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type, X-Request-Id"),
+            ("Access-Control-Expose-Headers", "X-Request-Id"),
+            ("Access-Control-Max-Age", "86400"),
+        ]
+    )
+    return [(k.encode("latin-1"), v.encode("latin-1")) for k, v in pairs]
 
 
 class CorsMiddleware:
@@ -67,20 +76,22 @@ class CorsMiddleware:
         )
 
         if request.method == "OPTIONS":
-            response = Response(status_code=204)
-            if allowed:
-                _apply_cors_headers(response, origin, self._allow_all)
-            await response(scope, receive, send)
+            headers = _cors_header_pairs(origin, self._allow_all) if allowed else []
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 204,
+                    "headers": [(b"content-length", b"0"), *headers],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
             return
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start" and allowed:
-                response = Response()
-                _apply_cors_headers(response, origin, self._allow_all)
-                message["headers"] = list(message.get("headers", [])) + [
-                    (k.encode("latin-1"), v.encode("latin-1"))
-                    for k, v in response.headers.items()
-                ]
+                message["headers"] = list(message.get("headers", [])) + _cors_header_pairs(
+                    origin, self._allow_all
+                )
             await send(message)
 
         await self._app(scope, receive, send_wrapper)
